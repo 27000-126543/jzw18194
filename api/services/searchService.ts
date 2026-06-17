@@ -1,4 +1,5 @@
 import { findAllMeetings, findAllActions } from '../store'
+import { getStore } from '../store/dataStore'
 import { findAllUsers } from '../store/userStore'
 import { findAllProjects } from '../store/projectStore'
 import type {
@@ -49,6 +50,7 @@ export function search(query: SearchQuery): SearchResponse {
     return { meetings: [], actions: [] }
   }
 
+  const store = getStore()
   const users = findAllUsers()
   const projects = findAllProjects()
   const userMap = new Map<number, User>()
@@ -118,19 +120,34 @@ export function search(query: SearchQuery): SearchResponse {
 
   let actions = findAllActions()
   if (projectIds && projectIds.length > 0) {
-    const meetingIdsForProjects = meetings
+    const meetingIdsForProjects = store.meetings
       .filter((m) => projectIds.includes(m.projectId))
       .map((m) => m.id)
     actions = actions.filter((a) => meetingIdsForProjects.includes(a.meetingId))
   }
   if (participantIds && participantIds.length > 0) {
-    actions = actions.filter((a) => participantIds.includes(a.assigneeId))
+    const meetingIdsWithParticipants = store.meetings
+      .filter((m) => participantIds.some((pid) => m.participantIds.includes(pid)))
+      .map((m) => m.id)
+    actions = actions.filter(
+      (a) => meetingIdsWithParticipants.includes(a.meetingId) || participantIds.includes(a.assigneeId),
+    )
   }
   if (dateFrom) {
-    actions = actions.filter((a) => a.createdAt.slice(0, 10) >= dateFrom)
+    const meetingIdsFrom = store.meetings
+      .filter((m) => m.meetingDate >= dateFrom)
+      .map((m) => m.id)
+    actions = actions.filter(
+      (a) => meetingIdsFrom.includes(a.meetingId) || a.createdAt.slice(0, 10) >= dateFrom,
+    )
   }
   if (dateTo) {
-    actions = actions.filter((a) => a.createdAt.slice(0, 10) <= dateTo)
+    const meetingIdsTo = store.meetings
+      .filter((m) => m.meetingDate <= dateTo)
+      .map((m) => m.id)
+    actions = actions.filter(
+      (a) => meetingIdsTo.includes(a.meetingId) || a.createdAt.slice(0, 10) <= dateTo,
+    )
   }
 
   const matchedActions: ActionItem[] = actions.filter((a) => {
@@ -141,7 +158,8 @@ export function search(query: SearchQuery): SearchResponse {
   })
 
   const actionHits: SearchActionHit[] = matchedActions.map((a) => {
-    const matchedMeet = findAllMeetings().find((m) => m.id === a.meetingId)
+    const matchedMeet = store.meetings.find((m) => m.id === a.meetingId)
+    const actionProject = matchedMeet ? projectMap.get(matchedMeet.projectId) : undefined
     let snippet = a.title
     if (a.description && a.description.toLowerCase().includes(kwLower)) {
       snippet = buildSnippet(a.description, kw)
@@ -156,6 +174,9 @@ export function search(query: SearchQuery): SearchResponse {
       snippet: highlightKeyword(snippet, kw),
       status: a.status,
       assignee: a.assignee,
+      projectName: actionProject?.name,
+      projectColor: actionProject?.color,
+      dueDate: a.dueDate,
     }
   })
 

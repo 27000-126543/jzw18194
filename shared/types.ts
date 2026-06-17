@@ -127,6 +127,9 @@ export interface SearchActionHit {
   snippet: string;
   status: ActionStatus;
   assignee?: User;
+  projectName?: string;
+  projectColor?: string;
+  dueDate?: string;
 }
 
 export interface SearchResponse {

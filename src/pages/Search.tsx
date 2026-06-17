@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Loader2, FileText, ListTodo, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -98,6 +98,11 @@ const SearchPage: React.FC = () => {
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
   const [showMobileFilter, setShowMobileFilter] = useState(false);
 
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const queryRef = useRef(query);
+  queryRef.current = query;
+
   useEffect(() => {
     const fetchMeta = async () => {
       try {
@@ -142,53 +147,59 @@ const SearchPage: React.FC = () => {
       console.error('搜索失败:', error);
       setMeetings([]);
       setActions([]);
+      setHasSearched(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (initialQ && !hasSearched) {
-      doSearch(initialQ, filters);
+    if (initialQ) {
+      doSearch(initialQ, filtersRef.current);
     }
-  }, [initialQ, hasSearched, filters, doSearch]);
+  }, []);
 
   useEffect(() => {
-    if (hasSearched && query) {
-      doSearch(query, filters);
-    }
-  }, [filters, query, hasSearched, doSearch]);
+    if (!hasSearched || !query) return;
+    doSearch(query, filters);
+  }, [filters, query, hasSearched]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setQuery(inputValue);
-    setSearchParams(inputValue ? { q: inputValue } : {});
-    doSearch(inputValue, filters);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSubmit(e);
+    const kw = inputValue.trim();
+    setQuery(kw);
+    setSearchParams(kw ? { q: kw } : {});
+    if (kw) {
+      doSearch(kw, filters);
     }
   };
 
   const handleFiltersChange = (partial: Partial<SearchFilters>) => {
-    setFilters((prev) => ({ ...prev, ...partial }));
+    setFilters((prev) => {
+      const next = { ...prev, ...partial };
+      if (partial.onlyActions && partial.onlyActions) {
+        next.onlyMeetings = false;
+      }
+      if (partial.onlyMeetings && partial.onlyMeetings) {
+        next.onlyActions = false;
+      }
+      return next;
+    });
   };
 
-  const filteredMeetings = useMemo(() => {
+  const displayMeetings = useMemo(() => {
     return meetings;
   }, [meetings]);
 
-  const filteredActions = useMemo(() => {
+  const displayActions = useMemo(() => {
     return actions;
   }, [actions]);
 
   const showMeetings = activeTab !== 'actions' && !filters.onlyActions;
   const showActions = activeTab !== 'meetings' && !filters.onlyMeetings;
 
-  const totalMeetings = filteredMeetings.length;
-  const totalActions = filteredActions.length;
+  const totalMeetings = displayMeetings.length;
+  const totalActions = displayActions.length;
   const totalAll = totalMeetings + totalActions;
 
   const tabs: Array<{ key: TabKey; label: string; count: number; icon: React.ReactNode }> = [
@@ -237,7 +248,6 @@ const SearchPage: React.FC = () => {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder="搜索会议纪要、行动项..."
               className={cn(
                 'w-full pl-14 pr-5 py-4 text-lg rounded-2xl',
@@ -256,6 +266,7 @@ const SearchPage: React.FC = () => {
             <p className="text-center text-sm text-slate-500 mt-3">
               找到 <span className="font-semibold text-slate-700">{totalAll}</span> 条与「
               <span className="text-navy-600 font-medium">{query}</span>」相关的结果
+              {totalMeetings > 0 && <span className="ml-1">（纪要 {totalMeetings} / 行动项 {totalActions}）</span>}
             </p>
           )}
         </form>
@@ -329,7 +340,7 @@ const SearchPage: React.FC = () => {
             <EmptyState hasSearched={true} />
           ) : (
             <div className="space-y-4">
-              {showMeetings && filteredMeetings.length > 0 && (
+              {showMeetings && displayMeetings.length > 0 && (
                 <>
                   {activeTab === 'all' && (
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider pt-2">
@@ -338,7 +349,7 @@ const SearchPage: React.FC = () => {
                     </div>
                   )}
                   <div className="space-y-4">
-                    {filteredMeetings.map((hit) => (
+                    {displayMeetings.map((hit) => (
                       <SearchMeetingCard
                         key={hit.id}
                         hit={hit}
@@ -349,7 +360,7 @@ const SearchPage: React.FC = () => {
                 </>
               )}
 
-              {showActions && filteredActions.length > 0 && (
+              {showActions && displayActions.length > 0 && (
                 <>
                   {activeTab === 'all' && totalMeetings > 0 && totalActions > 0 && (
                     <div className="h-px bg-slate-200 my-2" />
@@ -361,7 +372,7 @@ const SearchPage: React.FC = () => {
                     </div>
                   )}
                   <div className="space-y-4">
-                    {filteredActions.map((hit) => (
+                    {displayActions.map((hit) => (
                       <SearchActionCard
                         key={hit.id}
                         hit={hit}

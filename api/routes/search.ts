@@ -9,52 +9,25 @@ const ok = <T>(res: Response, data: T) => res.json({ ok: true as const, data })
 const err = (res: Response, error: string, status = 400) =>
   res.status(status).json({ ok: false as const, error })
 
-const SearchQuerySchema = z.object({
-  q: z.string().min(1, '搜索关键词不能为空'),
-  keyword: z.string().optional(),
-  projects: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
-    ),
-  projectIds: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
-    ),
-  participants: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
-    ),
-  participantIds: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
-    ),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-})
+function parseIdList(v: unknown): number[] | undefined {
+  if (!v || typeof v !== 'string') return undefined
+  const ids = v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0)
+  return ids.length > 0 ? ids : undefined
+}
 
 router.get('/', (req: Request, res: Response) => {
-  const parsed = SearchQuerySchema.safeParse(req.query)
-  if (!parsed.success) {
-    return err(res, '查询参数无效: ' + parsed.error.issues.map((i) => i.message).join('; '))
+  const raw = req.query
+  const keyword = ((raw.q ?? raw.keyword) as string || '').trim()
+  if (!keyword) {
+    return err(res, '搜索关键词不能为空')
   }
-  const q = parsed.data
-  const result = search({
-    keyword: q.q || q.keyword || '',
-    projectIds: q.projectIds || q.projects,
-    participantIds: q.participantIds || q.participants,
-    dateFrom: q.dateFrom || q.from,
-    dateTo: q.dateTo || q.to,
-  })
+
+  const projectIds = parseIdList(raw.projectIds ?? raw.projects)
+  const participantIds = parseIdList(raw.participantIds ?? raw.participants)
+  const dateFrom = (raw.dateFrom ?? raw.from) as string | undefined
+  const dateTo = (raw.dateTo ?? raw.to) as string | undefined
+
+  const result = search({ keyword, projectIds, participantIds, dateFrom, dateTo })
   return ok(res, result)
 })
 
