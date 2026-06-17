@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Loader2, FileText, ListTodo, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,53 @@ function getDateRangeFromTimeRange(timeRange: TimeRangeKey, customFrom?: string,
   }
 }
 
+function parseIdList(v: string | null): number[] {
+  if (!v) return [];
+  return v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0);
+}
+
+function readUrlFilters(params: URLSearchParams): { keyword: string; filters: SearchFilters; tab: TabKey } {
+  const keyword =
+    (params.get('q') || params.get('keyword') || params.get('query') || params.get('search') || '').trim();
+
+  const projectIds = parseIdList(params.get('projects') || params.get('projectIds'));
+  const participantIds = parseIdList(params.get('participants') || params.get('participantIds'));
+
+  const rawTime = params.get('time') || params.get('timeRange') || '';
+  const timeRange: TimeRangeKey = (['week', 'month', 'quarter', 'custom'].includes(rawTime) ? rawTime : 'week') as TimeRangeKey;
+
+  const customDateFrom = params.get('from') || params.get('dateFrom') || undefined;
+  const customDateTo = params.get('to') || params.get('dateTo') || undefined;
+
+  const rawTab = params.get('tab') || '';
+  const tab: TabKey = (['all', 'meetings', 'actions'].includes(rawTab) ? rawTab : 'all') as TabKey;
+
+  return {
+    keyword,
+    filters: {
+      ...DEFAULT_FILTERS,
+      projectIds,
+      participantIds,
+      timeRange,
+      customDateFrom: timeRange === 'custom' ? customDateFrom : undefined,
+      customDateTo: timeRange === 'custom' ? customDateTo : undefined,
+    },
+    tab,
+  };
+}
+
+function buildUrlParams(keyword: string, filters: SearchFilters, tab: TabKey): Record<string, string> {
+  const p: Record<string, string> = {};
+  if (keyword) p.q = keyword;
+  if (filters.projectIds.length > 0) p.projects = filters.projectIds.join(',');
+  if (filters.participantIds.length > 0) p.participants = filters.participantIds.join(',');
+  if (filters.timeRange !== 'week') p.time = filters.timeRange;
+  if (filters.timeRange === 'custom' && filters.customDateFrom) p.from = filters.customDateFrom;
+  if (filters.timeRange === 'custom' && filters.customDateTo) p.to = filters.customDateTo;
+  if (tab !== 'all') p.tab = tab;
+  return p;
+}
+
 const EmptyState: React.FC<{ hasSearched: boolean }> = ({ hasSearched }) => (
   <div className="card-base p-16 text-center">
     <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-slate-50 flex items-center justify-center">
@@ -82,26 +129,21 @@ const EmptyState: React.FC<{ hasSearched: boolean }> = ({ hasSearched }) => (
 
 const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQ = searchParams.get('q') || '';
+  const initial = useMemo(() => readUrlFilters(searchParams), []);
 
-  const [query, setQuery] = useState(initialQ);
-  const [inputValue, setInputValue] = useState(initialQ);
+  const [query, setQuery] = useState(initial.keyword);
+  const [inputValue, setInputValue] = useState(initial.keyword);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(!!initialQ);
+  const [hasSearched, setHasSearched] = useState(!!initial.keyword);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [meetings, setMeetings] = useState<SearchMeetingHit[]>([]);
   const [actions, setActions] = useState<SearchActionHit[]>([]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
-  const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
+  const [activeTab, setActiveTab] = useState<TabKey>(initial.tab);
+  const [filters, setFilters] = useState<SearchFilters>(initial.filters);
   const [showMobileFilter, setShowMobileFilter] = useState(false);
-
-  const filtersRef = useRef(filters);
-  filtersRef.current = filters;
-  const queryRef = useRef(query);
-  queryRef.current = query;
 
   useEffect(() => {
     const fetchMeta = async () => {
@@ -118,6 +160,11 @@ const SearchPage: React.FC = () => {
     };
     fetchMeta();
   }, []);
+
+  const syncUrl = useCallback((keyword: string, f: SearchFilters, tab: TabKey) => {
+    const p = buildUrlParams(keyword, f, tab);
+    setSearchParams(p, { replace: true });
+  }, [setSearchParams]);
 
   const doSearch = useCallback(async (keyword: string, currentFilters: SearchFilters) => {
     if (!keyword.trim()) {
@@ -154,59 +201,67 @@ const SearchPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (initialQ) {
-      doSearch(initialQ, filtersRef.current);
+    if (initial.keyword) {
+      doSearch(initial.keyword, initial.filters);
     }
   }, []);
 
   useEffect(() => {
     if (!hasSearched || !query) return;
     doSearch(query, filters);
-  }, [filters, query, hasSearched]);
+  }, [filters, query]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const kw = inputValue.trim();
     setQuery(kw);
-    setSearchParams(kw ? { q: kw } : {});
     if (kw) {
       doSearch(kw, filters);
+      syncUrl(kw, filters, activeTab);
+    } else {
+      setHasSearched(false);
+      setMeetings([]);
+      setActions([]);
+      setSearchParams({});
     }
   };
 
   const handleFiltersChange = (partial: Partial<SearchFilters>) => {
     setFilters((prev) => {
       const next = { ...prev, ...partial };
-      if (partial.onlyActions && partial.onlyActions) {
-        next.onlyMeetings = false;
-      }
-      if (partial.onlyMeetings && partial.onlyMeetings) {
-        next.onlyActions = false;
-      }
+      if (partial.onlyActions) next.onlyMeetings = false;
+      if (partial.onlyMeetings) next.onlyActions = false;
       return next;
     });
   };
 
-  const displayMeetings = useMemo(() => {
-    return meetings;
-  }, [meetings]);
-
-  const displayActions = useMemo(() => {
-    return actions;
-  }, [actions]);
+  useEffect(() => {
+    if (query) {
+      syncUrl(query, filters, activeTab);
+    }
+  }, [filters, activeTab, query]);
 
   const showMeetings = activeTab !== 'actions' && !filters.onlyActions;
   const showActions = activeTab !== 'meetings' && !filters.onlyMeetings;
 
-  const totalMeetings = displayMeetings.length;
-  const totalActions = displayActions.length;
-  const totalAll = totalMeetings + totalActions;
+  const totalMeetings = meetings.length;
+  const totalActions = actions.length;
+
+  const displayedCount = useMemo(() => {
+    if (activeTab === 'meetings') return totalMeetings;
+    if (activeTab === 'actions') return totalActions;
+    return totalMeetings + totalActions;
+  }, [activeTab, totalMeetings, totalActions]);
 
   const tabs: Array<{ key: TabKey; label: string; count: number; icon: React.ReactNode }> = [
-    { key: 'all', label: '全部', count: totalAll, icon: null },
+    { key: 'all', label: '全部', count: totalMeetings + totalActions, icon: null },
     { key: 'meetings', label: '纪要', count: totalMeetings, icon: <FileText className="w-4 h-4" /> },
     { key: 'actions', label: '行动项', count: totalActions, icon: <ListTodo className="w-4 h-4" /> },
   ];
+
+  const handleTabChange = (key: TabKey) => {
+    setActiveTab(key);
+  };
 
   const MobileFilterOverlay = showMobileFilter && (
     <>
@@ -264,9 +319,11 @@ const SearchPage: React.FC = () => {
           </div>
           {query && hasSearched && !loading && (
             <p className="text-center text-sm text-slate-500 mt-3">
-              找到 <span className="font-semibold text-slate-700">{totalAll}</span> 条与「
+              找到 <span className="font-semibold text-slate-700">{displayedCount}</span> 条与「
               <span className="text-navy-600 font-medium">{query}</span>」相关的结果
-              {totalMeetings > 0 && <span className="ml-1">（纪要 {totalMeetings} / 行动项 {totalActions}）</span>}
+              {activeTab === 'all' && (
+                <span className="ml-1">（纪要 {totalMeetings} / 行动项 {totalActions}）</span>
+              )}
             </p>
           )}
         </form>
@@ -286,7 +343,7 @@ const SearchPage: React.FC = () => {
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => handleTabChange(tab.key)}
                   className={cn(
                     'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5',
                     activeTab === tab.key
@@ -336,11 +393,11 @@ const SearchPage: React.FC = () => {
                 </div>
               ))}
             </div>
-          ) : totalAll === 0 ? (
+          ) : displayedCount === 0 ? (
             <EmptyState hasSearched={true} />
           ) : (
             <div className="space-y-4">
-              {showMeetings && displayMeetings.length > 0 && (
+              {showMeetings && meetings.length > 0 && (
                 <>
                   {activeTab === 'all' && (
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider pt-2">
@@ -349,7 +406,7 @@ const SearchPage: React.FC = () => {
                     </div>
                   )}
                   <div className="space-y-4">
-                    {displayMeetings.map((hit) => (
+                    {meetings.map((hit) => (
                       <SearchMeetingCard
                         key={hit.id}
                         hit={hit}
@@ -360,7 +417,7 @@ const SearchPage: React.FC = () => {
                 </>
               )}
 
-              {showActions && displayActions.length > 0 && (
+              {showActions && actions.length > 0 && (
                 <>
                   {activeTab === 'all' && totalMeetings > 0 && totalActions > 0 && (
                     <div className="h-px bg-slate-200 my-2" />
@@ -372,7 +429,7 @@ const SearchPage: React.FC = () => {
                     </div>
                   )}
                   <div className="space-y-4">
-                    {displayActions.map((hit) => (
+                    {actions.map((hit) => (
                       <SearchActionCard
                         key={hit.id}
                         hit={hit}

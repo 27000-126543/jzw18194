@@ -17,7 +17,7 @@ function parseIdList(v: unknown): number[] | undefined {
 
 router.get('/', (req: Request, res: Response) => {
   const raw = req.query
-  const keyword = ((raw.q ?? raw.keyword) as string || '').trim()
+  const keyword = ((raw.q ?? raw.keyword ?? raw.query ?? raw.search) as string || '').trim()
   if (!keyword) {
     return err(res, '搜索关键词不能为空')
   }
