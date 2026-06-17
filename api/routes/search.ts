@@ -10,8 +10,21 @@ const err = (res: Response, error: string, status = 400) =>
   res.status(status).json({ ok: false as const, error })
 
 const SearchQuerySchema = z.object({
-  keyword: z.string().min(1, '搜索关键词不能为空'),
+  q: z.string().min(1, '搜索关键词不能为空'),
+  keyword: z.string().optional(),
+  projects: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
+    ),
   projectIds: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
+    ),
+  participants: z
     .string()
     .optional()
     .transform((v) =>
@@ -23,6 +36,8 @@ const SearchQuerySchema = z.object({
     .transform((v) =>
       v ? v.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0) : undefined,
     ),
+  from: z.string().optional(),
+  to: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
 })
@@ -34,11 +49,11 @@ router.get('/', (req: Request, res: Response) => {
   }
   const q = parsed.data
   const result = search({
-    keyword: q.keyword,
-    projectIds: q.projectIds,
-    participantIds: q.participantIds,
-    dateFrom: q.dateFrom,
-    dateTo: q.dateTo,
+    keyword: q.q || q.keyword || '',
+    projectIds: q.projectIds || q.projects,
+    participantIds: q.participantIds || q.participants,
+    dateFrom: q.dateFrom || q.from,
+    dateTo: q.dateTo || q.to,
   })
   return ok(res, result)
 })

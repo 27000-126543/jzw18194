@@ -4,6 +4,7 @@ import {
   findAllActions,
   findActionById,
   updateAction,
+  removeAction,
 } from '../store/actionStore'
 import { findMeetingById } from '../store/meetingStore'
 import { triggerActionDone } from '../services/notificationService'
@@ -58,6 +59,14 @@ router.get('/', (req: Request, res: Response) => {
   return ok(res, actions)
 })
 
+router.get('/:id', (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id) || id <= 0) return err(res, '无效的任务ID')
+  const action = findActionById(id)
+  if (!action) return err(res, '任务不存在', 404)
+  return ok(res, action)
+})
+
 router.patch('/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10)
   if (isNaN(id) || id <= 0) return err(res, '无效的任务ID')
@@ -74,6 +83,14 @@ router.patch('/:id', (req: Request, res: Response) => {
     triggerActionDone(updated, meeting)
   }
   return ok(res, updated)
+})
+
+router.delete('/:id', (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id) || id <= 0) return err(res, '无效的任务ID')
+  const removed = removeAction(id)
+  if (!removed) return err(res, '任务不存在', 404)
+  return ok(res, { removed: true })
 })
 
 export default router

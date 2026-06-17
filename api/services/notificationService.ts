@@ -3,13 +3,19 @@ import type { ActionItem, Meeting } from '../../shared/types'
 
 export function triggerActionDone(action: ActionItem, meeting?: Meeting) {
   if (!meeting || !meeting.createdBy) return
-  if (action.assigneeId === meeting.createdBy) return
   const assigneeName = action.assignee?.name ?? '某人'
+  const isSelf = action.assigneeId === meeting.createdBy
+  const title = isSelf
+    ? '您完成了一项任务'
+    : '任务完成提醒'
+  const content = isSelf
+    ? `您完成了会议「${meeting.title}」中的任务「${action.title}」`
+    : `${assigneeName}完成了任务「${action.title}」`
   createNotification({
     userId: meeting.createdBy,
     type: 'action_done',
-    title: '任务完成提醒',
-    content: `${assigneeName}完成了任务「${action.title}」`,
+    title,
+    content,
     relatedId: action.id,
   })
 }

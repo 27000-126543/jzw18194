@@ -333,10 +333,10 @@
       "meetingId": 4,
       "title": "采购CDN加速服务",
       "assigneeId": 1,
-      "status": "todo",
+      "status": "done",
       "dueDate": "2026-06-18",
       "createdAt": "2026-06-04T10:30:00.000Z",
-      "updatedAt": "2026-06-04T10:30:00.000Z"
+      "updatedAt": "2026-06-17T18:47:57.561Z"
     },
     {
       "id": 15,
@@ -373,10 +373,10 @@
       "meetingId": 5,
       "title": "协助制作短视频素材",
       "assigneeId": 4,
-      "status": "todo",
+      "status": "done",
       "dueDate": "2026-06-15",
       "createdAt": "2026-06-09T14:00:00.000Z",
-      "updatedAt": "2026-06-09T14:00:00.000Z"
+      "updatedAt": "2026-06-17T18:46:19.782Z"
     },
     {
       "id": 19,
@@ -589,6 +589,26 @@
       "relatedId": 8,
       "read": 0,
       "createdAt": "2026-06-17T15:05:00.000Z"
+    },
+    {
+      "id": 11,
+      "userId": 5,
+      "type": "action_done",
+      "title": "任务完成提醒",
+      "content": "刘洋完成了任务「协助制作短视频素材」",
+      "relatedId": 18,
+      "read": 0,
+      "createdAt": "2026-06-17T18:46:19.782Z"
+    },
+    {
+      "id": 12,
+      "userId": 1,
+      "type": "action_done",
+      "title": "您完成了一项任务",
+      "content": "您完成了会议「Alpha v2.0 技术方案评审」中的任务「采购CDN加速服务」",
+      "relatedId": 14,
+      "read": 0,
+      "createdAt": "2026-06-17T18:47:57.561Z"
     }
   ],
   "nextIds": {
@@ -596,6 +616,6 @@
     "projects": 4,
     "meetings": 9,
     "actionItems": 30,
-    "notifications": 11
+    "notifications": 13
   }
 }

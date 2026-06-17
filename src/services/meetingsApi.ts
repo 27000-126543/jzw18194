@@ -3,10 +3,11 @@ import type { Meeting, CreateMeetingRequest, UpdateMeetingRequest, StatsResponse
 
 export const meetingsApi = {
   async list(params?: {
-    projectIds?: number[];
-    participantIds?: number[];
-    dateFrom?: string;
-    dateTo?: string;
+    projectId?: number;
+    participantId?: number;
+    keyword?: string;
+    from?: string;
+    to?: string;
   }): Promise<Meeting[]> {
     return await api.get<Meeting[]>('/meetings', { params });
   },
@@ -32,11 +33,15 @@ export const meetingsApi = {
   },
 
   async stats(): Promise<StatsResponse> {
-    return await api.get<StatsResponse>('/meetings/stats/overview');
+    return await api.get<StatsResponse>('/meetings/stats');
   },
 
   async getUnfinishedSiblings(id: number): Promise<ActionItem[]> {
     return await api.get<ActionItem[]>(`/meetings/${id}/unfinished-siblings`);
+  },
+
+  async getUnfinishedByProject(projectId: number): Promise<ActionItem[]> {
+    return await api.get<ActionItem[]>('/meetings/unfinished-by-project', { params: { projectId } });
   },
 };
 

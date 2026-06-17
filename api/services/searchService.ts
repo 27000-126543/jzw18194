@@ -123,6 +123,15 @@ export function search(query: SearchQuery): SearchResponse {
       .map((m) => m.id)
     actions = actions.filter((a) => meetingIdsForProjects.includes(a.meetingId))
   }
+  if (participantIds && participantIds.length > 0) {
+    actions = actions.filter((a) => participantIds.includes(a.assigneeId))
+  }
+  if (dateFrom) {
+    actions = actions.filter((a) => a.createdAt.slice(0, 10) >= dateFrom)
+  }
+  if (dateTo) {
+    actions = actions.filter((a) => a.createdAt.slice(0, 10) <= dateTo)
+  }
 
   const matchedActions: ActionItem[] = actions.filter((a) => {
     return (

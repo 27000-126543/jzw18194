@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type {
   Meeting,
@@ -7,7 +7,6 @@ import type {
   ActionItem,
   Project,
   User,
-  ParsedAction,
   ActionStatus,
 } from '../../shared/types';
 import { cn } from '@/lib/utils';
@@ -39,6 +38,7 @@ import {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 interface ActionOverride {
+  id?: number;
   tempKey?: string;
   title: string;
   assigneeId: number;
@@ -145,47 +145,14 @@ const MeetingEdit: React.FC = () => {
     const fetchSiblingsForNew = async () => {
       if (!projectId || !isNew) return;
       try {
-        const tempMeeting: Meeting = {
-          id: 999999,
-          title: '',
-          projectId: Number(projectId),
-          meetingDate: todayISO(),
-          createdBy: currentUser.id,
-          discussionPoints: '',
-          decisions: '',
-          participantIds: [],
-          createdAt: '',
-          updatedAt: '',
-          deleted: 0,
-        };
-        const projectMeetingIds: number[] = [];
-        const storeSiblings = await meetingsApi
-          .list({ projectIds: [Number(projectId)] })
-          .then((meetings) => {
-            return meetings
-              .filter((m) => m.id < 999999)
-              .map((m) => m.id);
-          });
-        const allMeetings = await meetingsApi.list({ projectIds: [Number(projectId)] });
-        const pIds = allMeetings.map((m) => m.id);
-        const mockSiblings: ActionItem[] = [];
-        for (const pid of pIds) {
-          try {
-            const s = await meetingsApi.getUnfinishedSiblings(pid);
-            mockSiblings.push(...s);
-          } catch {
-          }
-        }
-        const uniqueSiblings = Array.from(
-          new Map(mockSiblings.map((s) => [s.id, s])).values()
-        );
-        setUnfinishedSiblings(uniqueSiblings);
+        const siblings = await meetingsApi.getUnfinishedByProject(Number(projectId));
+        setUnfinishedSiblings(siblings);
       } catch (e) {
         console.error('加载未完成项失败:', e);
       }
     };
     fetchSiblingsForNew();
-  }, [projectId, isNew, currentUser.id]);
+  }, [projectId, isNew]);
 
   useEffect(() => {
     const combinedText = `${discussionPoints}\n${decisions}`;
@@ -280,27 +247,35 @@ const MeetingEdit: React.FC = () => {
 
     for (const action of parsedActions) {
       if (action.assigneeId && action.title.trim()) {
-        overrides.push({
+        const override: ActionOverride = {
           tempKey: action.tempKey,
           title: action.title.trim(),
           assigneeId: action.assigneeId,
           dueDate: action.dueDate,
           status: (action.status as ActionStatus) || 'todo',
           description: action.description,
-        });
+        };
+        if ('id' in action && typeof action.id === 'number') {
+          override.id = action.id;
+        }
+        overrides.push(override);
       }
     }
 
     for (const action of historyActions) {
       if (action.assigneeId && action.title.trim()) {
-        overrides.push({
+        const override: ActionOverride = {
           tempKey: action.tempKey,
           title: action.title.trim(),
           assigneeId: action.assigneeId,
           dueDate: action.dueDate,
           status: (action.status as ActionStatus) || 'todo',
           description: action.description,
-        });
+        };
+        if ('id' in action && typeof action.id === 'number') {
+          override.id = action.id;
+        }
+        overrides.push(override);
       }
     }
 

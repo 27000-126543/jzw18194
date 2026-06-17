@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -128,11 +128,19 @@ const ParticipantChip: React.FC<{
   );
 };
 
+const DEFAULT_STATS: StatsResponse = {
+  totalMeetings: 0,
+  pendingActions: 0,
+  weeklyCompletionRate: 0,
+  overdueActions: 0,
+  weeklyDelta: { meetings: 0, pending: 0, completion: 0, overdue: 0 },
+};
+
 const MeetingsList: React.FC = () => {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [stats, setStats] = useState<StatsResponse>(DEFAULT_STATS);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -144,22 +152,31 @@ const MeetingsList: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showParticipantFilter, setShowParticipantFilter] = useState(false);
 
+  const loadStats = useCallback(async () => {
+    try {
+      const statsRes = await meetingsApi.stats();
+      setStats(statsRes);
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+      setStats(DEFAULT_STATS);
+    }
+  }, []);
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [statsRes, meetingsRes, projectsRes, usersRes] = await Promise.all([
-          meetingsApi.stats(),
-          meetingsApi.list(),
+        const [statsRes, projectsRes, usersRes] = await Promise.all([
+          meetingsApi.stats().catch(() => DEFAULT_STATS),
           usersApi.listProjects(),
           usersApi.listUsers(),
         ]);
         setStats(statsRes);
-        setMeetings(meetingsRes);
         setProjects(projectsRes);
         setUsers(usersRes);
       } catch (error) {
         console.error('Failed to load data:', error);
+        setStats(DEFAULT_STATS);
       } finally {
         setLoading(false);
       }
@@ -168,31 +185,57 @@ const MeetingsList: React.FC = () => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const loadFilteredMeetings = async () => {
+      try {
+        const params: {
+          projectId?: number;
+          participantId?: number;
+          keyword?: string;
+          from?: string;
+          to?: string;
+        } = {};
+        if (selectedProjectIds.length === 1) {
+          params.projectId = selectedProjectIds[0];
+        }
+        if (selectedParticipantIds.length === 1) {
+          params.participantId = selectedParticipantIds[0];
+        }
+        if (searchKeyword.trim()) {
+          params.keyword = searchKeyword.trim();
+        }
+        if (dateFrom) {
+          params.from = dateFrom;
+        }
+        if (dateTo) {
+          params.to = dateTo;
+        }
+        const meetingsRes = await meetingsApi.list(params);
+        setMeetings(meetingsRes);
+      } catch (error) {
+        console.error('Failed to load meetings:', error);
+      }
+    };
+
+    if (projects.length > 0 && users.length > 0) {
+      loadFilteredMeetings();
+    }
+  }, [selectedProjectIds, selectedParticipantIds, dateFrom, dateTo, searchKeyword, projects.length, users.length]);
+
   const filteredMeetings = useMemo(() => {
     return meetings.filter((m) => {
-      if (selectedProjectIds.length > 0 && !selectedProjectIds.includes(m.projectId)) {
+      if (selectedProjectIds.length > 1 && !selectedProjectIds.includes(m.projectId)) {
         return false;
       }
-      if (selectedParticipantIds.length > 0) {
+      if (selectedParticipantIds.length > 1) {
         const hasParticipant = selectedParticipantIds.some((pid) =>
           m.participantIds.includes(pid)
         );
         if (!hasParticipant) return false;
       }
-      if (dateFrom && m.meetingDate < dateFrom) return false;
-      if (dateTo && m.meetingDate > dateTo) return false;
-      if (searchKeyword.trim()) {
-        const kw = searchKeyword.trim().toLowerCase();
-        const titleMatch = m.title.toLowerCase().includes(kw);
-        const projectMatch = m.project?.name.toLowerCase().includes(kw);
-        const participantMatch = m.participants?.some((p) =>
-          p.name.toLowerCase().includes(kw)
-        );
-        if (!titleMatch && !projectMatch && !participantMatch) return false;
-      }
       return true;
     });
-  }, [meetings, selectedProjectIds, selectedParticipantIds, dateFrom, dateTo, searchKeyword]);
+  }, [meetings, selectedProjectIds, selectedParticipantIds]);
 
   const handleProjectToggle = (id: number) => {
     setSelectedProjectIds((prev) =>
@@ -219,6 +262,7 @@ const MeetingsList: React.FC = () => {
     try {
       await meetingsApi.remove(meeting.id);
       setMeetings((prev) => prev.filter((m) => m.id !== meeting.id));
+      await loadStats();
     } catch (error) {
       console.error('Failed to delete meeting:', error);
     }

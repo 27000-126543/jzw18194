@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Loader2, FileText, ListTodo, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Project, User, SearchMeetingHit, SearchActionHit } from '../../shared/types';
 import { searchApi } from '@/services/searchApi';
 import { usersApi } from '@/services/usersApi';
-import SearchFilterPanel, { SearchFilters } from '@/components/search/SearchFilterPanel';
+import SearchFilterPanel, { SearchFilters, TimeRangeKey } from '@/components/search/SearchFilterPanel';
 import SearchMeetingCard from '@/components/search/SearchMeetingCard';
 import SearchActionCard from '@/components/search/SearchActionCard';
 
@@ -21,6 +21,33 @@ const DEFAULT_FILTERS: SearchFilters = {
   onlyMeetings: false,
   matchHighlight: true,
 };
+
+function getDateRangeFromTimeRange(timeRange: TimeRangeKey, customFrom?: string, customTo?: string): { dateFrom?: string; dateTo?: string } {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  switch (timeRange) {
+    case 'week': {
+      const d = new Date();
+      const day = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - day);
+      return { dateFrom: d.toISOString().slice(0, 10), dateTo: today };
+    }
+    case 'month': {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { dateFrom: d.toISOString().slice(0, 10), dateTo: today };
+    }
+    case 'quarter': {
+      const quarter = Math.floor(now.getMonth() / 3);
+      const d = new Date(now.getFullYear(), quarter * 3, 1);
+      return { dateFrom: d.toISOString().slice(0, 10), dateTo: today };
+    }
+    case 'custom':
+      return { dateFrom: customFrom, dateTo: customTo };
+    default:
+      return {};
+  }
+}
 
 const EmptyState: React.FC<{ hasSearched: boolean }> = ({ hasSearched }) => (
   <div className="card-base p-16 text-center">
@@ -87,7 +114,7 @@ const SearchPage: React.FC = () => {
     fetchMeta();
   }, []);
 
-  const doSearch = React.useCallback(async (keyword: string) => {
+  const doSearch = useCallback(async (keyword: string, currentFilters: SearchFilters) => {
     if (!keyword.trim()) {
       setMeetings([]);
       setActions([]);
@@ -96,7 +123,18 @@ const SearchPage: React.FC = () => {
     }
     try {
       setLoading(true);
-      const response = await searchApi.search(keyword.trim());
+      const { dateFrom, dateTo } = getDateRangeFromTimeRange(
+        currentFilters.timeRange,
+        currentFilters.customDateFrom,
+        currentFilters.customDateTo
+      );
+      const response = await searchApi.search({
+        keyword: keyword.trim(),
+        projectIds: currentFilters.projectIds.length > 0 ? currentFilters.projectIds : undefined,
+        participantIds: currentFilters.participantIds.length > 0 ? currentFilters.participantIds : undefined,
+        dateFrom,
+        dateTo,
+      });
       setMeetings(response.meetings);
       setActions(response.actions);
       setHasSearched(true);
@@ -110,16 +148,22 @@ const SearchPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (initialQ) {
-      doSearch(initialQ);
+    if (initialQ && !hasSearched) {
+      doSearch(initialQ, filters);
     }
-  }, []);
+  }, [initialQ, hasSearched, filters, doSearch]);
+
+  useEffect(() => {
+    if (hasSearched && query) {
+      doSearch(query, filters);
+    }
+  }, [filters, query, hasSearched, doSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setQuery(inputValue);
     setSearchParams(inputValue ? { q: inputValue } : {});
-    doSearch(inputValue);
+    doSearch(inputValue, filters);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -133,27 +177,12 @@ const SearchPage: React.FC = () => {
   };
 
   const filteredMeetings = useMemo(() => {
-    let result = meetings;
-    if (filters.projectIds.length > 0) {
-      const names = projects.filter((p) => filters.projectIds.includes(p.id)).map((p) => p.name);
-      result = result.filter((m) => names.includes(m.projectName));
-    }
-    if (filters.onlyMeetings && activeTab === 'all') {
-      return result;
-    }
-    return result;
-  }, [meetings, filters.projectIds, filters.onlyMeetings, activeTab, projects]);
+    return meetings;
+  }, [meetings]);
 
   const filteredActions = useMemo(() => {
-    let result = actions;
-    if (filters.participantIds.length > 0) {
-      result = result.filter((a) => a.assignee && filters.participantIds.includes(a.assignee.id));
-    }
-    if (filters.onlyActions && activeTab === 'all') {
-      return result;
-    }
-    return result;
-  }, [actions, filters.participantIds, filters.onlyActions, activeTab]);
+    return actions;
+  }, [actions]);
 
   const showMeetings = activeTab !== 'actions' && !filters.onlyActions;
   const showActions = activeTab !== 'meetings' && !filters.onlyMeetings;

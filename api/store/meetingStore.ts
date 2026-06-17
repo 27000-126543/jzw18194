@@ -1,13 +1,12 @@
 import { getStore, nowISO } from './dataStore'
-import { findAllUsers, findUserById } from './userStore'
-import { findAllProjects, findProjectById } from './projectStore'
-import { findAllActions, createAction, removeActionsByMeetingId } from './actionStore'
+import { findAllUsers } from './userStore'
+import { findAllProjects } from './projectStore'
+import { findAllActions, createAction, updateAction, removeAction } from './actionStore'
 import type {
   Meeting,
   CreateMeetingRequest,
   UpdateMeetingRequest,
   ActionItem,
-  ActionStatus,
 } from '../../shared/types'
 
 function computeProgress(actions: ActionItem[]): NonNullable<Meeting['progress']> {
@@ -137,6 +136,15 @@ export function createMeeting(
   return enrichMeeting(meeting)
 }
 
+function extractActionIdFromTempKey(tempKey?: string): number | undefined {
+  if (!tempKey) return undefined
+  const existingMatch = tempKey.match(/^existing_(\d+)$/)
+  if (existingMatch) return parseInt(existingMatch[1], 10)
+  const historyMatch = tempKey.match(/^history_(\d+)$/)
+  if (historyMatch) return parseInt(historyMatch[1], 10)
+  return undefined
+}
+
 export function updateMeeting(
   id: number,
   req: UpdateMeetingRequest,
@@ -155,16 +163,60 @@ export function updateMeeting(
   }
   store.meetings[idx] = updated
 
+  const existingActions = findAllActions({ meetingId: id })
+  const keptActionIds = new Set<number>()
+
   if (req.actionOverrides && req.actionOverrides.length > 0) {
     for (const override of req.actionOverrides) {
-      createAction({
-        meetingId: id,
-        title: override.title,
-        description: override.description,
-        assigneeId: override.assigneeId,
-        status: override.status ?? 'todo',
-        dueDate: override.dueDate,
-      })
+      const existingId = extractActionIdFromTempKey(override.tempKey)
+      if (existingId && existingActions.some((a) => a.id === existingId)) {
+        updateAction(existingId, {
+          title: override.title,
+          description: override.description,
+          assigneeId: override.assigneeId,
+          status: override.status,
+          dueDate: override.dueDate,
+        })
+        keptActionIds.add(existingId)
+      } else {
+        const newAction = createAction({
+          meetingId: id,
+          title: override.title,
+          description: override.description,
+          assigneeId: override.assigneeId,
+          status: override.status ?? 'todo',
+          dueDate: override.dueDate,
+        })
+        keptActionIds.add(newAction.id)
+      }
+    }
+  }
+
+  if (req.includeActionIds && req.includeActionIds.length > 0) {
+    for (const oldId of req.includeActionIds) {
+      const oldAction = findAllActions().find((a) => a.id === oldId)
+      if (!oldAction) continue
+
+      if (oldAction.meetingId === id && oldAction.fromHistory) {
+        keptActionIds.add(oldId)
+      } else {
+        const newAction = createAction({
+          meetingId: id,
+          title: oldAction.title,
+          description: oldAction.description,
+          assigneeId: oldAction.assigneeId,
+          status: oldAction.status,
+          dueDate: oldAction.dueDate,
+          fromHistory: true,
+        })
+        keptActionIds.add(newAction.id)
+      }
+    }
+  }
+
+  for (const existingAction of existingActions) {
+    if (!keptActionIds.has(existingAction.id)) {
+      removeAction(existingAction.id)
     }
   }
 
@@ -188,15 +240,18 @@ export function getUnfinishedSiblings(
   currentMeetingId?: number,
 ): ActionItem[] {
   const store = getStore()
-  const projectMeetingIds = store.meetings
+  const projectMeetings = store.meetings
     .filter(
       (m) =>
         m.deleted === 0 &&
         m.projectId === projectId &&
-        (!currentMeetingId || m.id < currentMeetingId),
+        (currentMeetingId === undefined || m.id !== currentMeetingId),
     )
     .sort((a, b) => b.meetingDate.localeCompare(a.meetingDate))
-    .map((m) => m.id)
+
+  const meetingDateMap = new Map<number, string>()
+  projectMeetings.forEach((m) => meetingDateMap.set(m.id, m.meetingDate))
+  const projectMeetingIds = projectMeetings.map((m) => m.id)
 
   const actions = findAllActions()
   return actions
@@ -205,6 +260,13 @@ export function getUnfinishedSiblings(
         projectMeetingIds.includes(a.meetingId) &&
         a.status !== 'done',
     )
+    .sort((a, b) => {
+      const dateA = meetingDateMap.get(a.meetingId) || ''
+      const dateB = meetingDateMap.get(b.meetingId) || ''
+      const dateCompare = dateB.localeCompare(dateA)
+      if (dateCompare !== 0) return dateCompare
+      return b.createdAt.localeCompare(a.createdAt)
+    })
 }
 
 export interface StatsResult {

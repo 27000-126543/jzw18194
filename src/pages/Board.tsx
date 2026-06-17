@@ -91,16 +91,14 @@ const Board: React.FC = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [actionsData, projectsData, usersData] = await Promise.all([
-          actionsApi.board(),
+        const [projectsData, usersData] = await Promise.all([
           usersApi.listProjects(),
           usersApi.listUsers(),
         ]);
-        setActions(actionsData);
         setProjects(projectsData);
         setUsers(usersData);
       } catch (error) {
-        console.error('加载看板数据失败:', error);
+        console.error('加载元数据失败:', error);
       } finally {
         setLoading(false);
       }
@@ -108,13 +106,30 @@ const Board: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const fetchActions = async () => {
+      try {
+        setLoading(true);
+        const params: { projectId?: number; assigneeId?: number } = {};
+        if (selectedProject) {
+          params.projectId = Number(selectedProject) || undefined;
+        }
+        if (selectedAssignee) {
+          params.assigneeId = Number(selectedAssignee) || undefined;
+        }
+        const actionsData = await actionsApi.board(params);
+        setActions(actionsData);
+      } catch (error) {
+        console.error('加载看板数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchActions();
+  }, [selectedProject, selectedAssignee]);
+
   const filteredActions = useMemo(() => {
     return actions.filter((action) => {
-      if (selectedProject) {
-        const proj = projects.find(p => p.id === Number(selectedProject));
-        if (proj && action.projectName !== proj.name) return false;
-      }
-      if (selectedAssignee && action.assigneeId !== Number(selectedAssignee)) return false;
       if (onlyMine && action.assigneeId !== currentUser.id) return false;
       if (keyword) {
         const kw = keyword.toLowerCase();
@@ -124,7 +139,7 @@ const Board: React.FC = () => {
       }
       return true;
     });
-  }, [actions, selectedProject, selectedAssignee, onlyMine, keyword, projects, currentUser.id]);
+  }, [actions, onlyMine, keyword, currentUser.id]);
 
   const groupedActions = useMemo(() => {
     const groups: Record<ActionStatus, ActionItem[]> = {

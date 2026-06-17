@@ -93,6 +93,15 @@ router.get('/stats', (_req: Request, res: Response) => {
   return ok(res, stats)
 })
 
+router.get('/unfinished-by-project', (req: Request, res: Response) => {
+  const projectIdStr = req.query.projectId as string
+  if (!projectIdStr) return err(res, '缺少 projectId 参数')
+  const projectId = parseInt(projectIdStr, 10)
+  if (isNaN(projectId) || projectId <= 0) return err(res, '无效的 projectId')
+  const actions = getUnfinishedSiblings(projectId, undefined)
+  return ok(res, actions)
+})
+
 router.get('/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10)
   if (isNaN(id) || id <= 0) return err(res, '无效的会议ID')
@@ -131,6 +140,14 @@ router.delete('/:id', (req: Request, res: Response) => {
   const success = removeMeeting(id)
   if (!success) return err(res, '会议不存在', 404)
   return ok(res, { deleted: true })
+})
+
+router.get('/unfinished-by-project', (req: Request, res: Response) => {
+  const projectIdStr = req.query.projectId as string
+  const projectId = parseInt(projectIdStr, 10)
+  if (isNaN(projectId) || projectId <= 0) return err(res, '无效的项目ID')
+  const siblings = getUnfinishedSiblings(projectId)
+  return ok(res, siblings)
 })
 
 router.get('/:id/unfinished-siblings', (req: Request, res: Response) => {

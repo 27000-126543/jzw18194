@@ -16,7 +16,7 @@ function computeOverdue(dueDate: string | undefined, status: ActionStatus): bool
   return due.getTime() < today.getTime()
 }
 
-function enrichAction(action: ActionItem): ActionItem {
+function enrichAction(action: ActionItem): ActionItem & { assigneeName?: string } {
   const users = findAllUsers()
   const projects = findAllProjects()
   const store = getStore()
@@ -26,6 +26,7 @@ function enrichAction(action: ActionItem): ActionItem {
   return {
     ...action,
     assignee,
+    assigneeName: assignee?.name,
     overdue: computeOverdue(action.dueDate, action.status),
     meetingTitle: meeting?.title,
     projectName: project?.name,
